@@ -76,12 +76,30 @@ def extract_text_from_pdf(file_bytes: bytes) -> dict:
             pass
 
     # Fallback to OCR
-    if not has_text and shutil.which("tesseract"):
-        try:
-            page_texts, page_count = _extract_text_ocr(file_bytes)
-            used_ocr = True
-        except Exception:
-            pass
+    if not has_text:
+        if shutil.which("tesseract"):
+            try:
+                page_texts, page_count = _extract_text_ocr(file_bytes)
+                used_ocr = True
+                has_text = any(len(t) > 50 for t in page_texts)
+            except Exception as e:
+                ocr_error = str(e)
+        else:
+            ocr_error = "tesseract not installed"
+
+        if not has_text and page_count > 0:
+            # Return a helpful error message as text so the caller knows why
+            msg = f"[Ce PDF est scanné ({page_count} pages) mais l'OCR a échoué"
+            if 'ocr_error' in dir():
+                msg += f" : {ocr_error}"
+            msg += ". Installez tesseract et poppler pour activer l'OCR : apt-get install tesseract-ocr tesseract-ocr-fra poppler-utils]"
+            return {
+                "text": "",
+                "page_count": page_count,
+                "truncated": False,
+                "used_ocr": False,
+                "error": msg,
+            }
 
     # Build text with page markers
     text_parts = []

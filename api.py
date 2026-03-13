@@ -167,6 +167,7 @@ def _ensure_text_extracted(pdf_data: dict) -> None:
     pdf_data["text"] = result["text"]
     pdf_data["page_count"] = result["page_count"]
     pdf_data["used_ocr"] = result["used_ocr"]
+    pdf_data["extraction_error"] = result.get("error")
 
     # If OCR was needed, create a searchable PDF with text layer for the viewer
     if result["used_ocr"]:
@@ -226,7 +227,8 @@ def extract(req: ExtractRequest):
     _ensure_text_extracted(pdf_data)
 
     if not pdf_data["text"]:
-        raise HTTPException(422, "No text could be extracted from this PDF")
+        error_detail = pdf_data.get("extraction_error") or "No text could be extracted from this PDF"
+        raise HTTPException(422, error_detail)
 
     model_id = None
     for label, mid in AVAILABLE_MODELS.items():

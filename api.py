@@ -206,10 +206,16 @@ def get_pdf(upload_id: str):
     content = pdf_data.get("searchable_pdf") or pdf_data.get("raw_bytes")
     if not content:
         raise HTTPException(404, "PDF data not found")
+    filename = pdf_data.get("filename", "document.pdf")
+    ascii_filename = filename.encode("ascii", "ignore").decode("ascii") or "document.pdf"
+    from urllib.parse import quote
+    utf8_filename = quote(filename)
     return Response(
         content=content,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"inline; filename=\"{pdf_data.get('filename', 'document.pdf')}\""},
+        headers={
+            "Content-Disposition": f"inline; filename=\"{ascii_filename}\"; filename*=UTF-8''{utf8_filename}"
+        },
     )
 
 

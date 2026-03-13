@@ -34,3 +34,7 @@ waitForPort = 5000
 
 [workflows.workflow.metadata]
 outputType = "webview"
+
+[nix]
+channel = "stable-25_05"
+packages = ["tesseract", "poppler-utils", "tesseract4"]

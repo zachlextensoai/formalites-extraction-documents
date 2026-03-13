@@ -38,3 +38,8 @@ outputType = "webview"
 [nix]
 channel = "stable-25_05"
 packages = ["tesseract", "poppler-utils", "tesseract4"]
+
+[deployment]
+build = ["sh", "-c", "cd frontend && npm install && npm run build"]
+run = ["sh", "-c", "bash start.sh"]
+deploymentTarget = "cloudrun"

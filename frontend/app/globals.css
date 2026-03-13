@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* PDF viewer full height */
+.rpv-core__viewer {
+  height: 100% !important;
+}
+
+/* Red-tinted search highlights in PDF */
+.rpv-search__highlight {
+  background-color: rgba(220, 38, 38, 0.25) !important;
+  border: 1px solid rgba(220, 38, 38, 0.5) !important;
+  border-radius: 2px;
+}
+
+.rpv-search__highlight--current {
+  background-color: rgba(220, 38, 38, 0.45) !important;
+  border-color: rgba(220, 38, 38, 0.8) !important;
+}

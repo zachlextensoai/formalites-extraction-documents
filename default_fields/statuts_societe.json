@@ -1,0 +1,53 @@
+{
+  "version": "1.0",
+  "doc_type": "statuts-societe",
+  "doc_type_label": "Statuts de Société",
+  "instructions": "Tu es un expert en analyse de documents juridiques français.\nExtrais les informations suivantes du document fourni.\n\nPour chaque champ, fournis :\n- La valeur extraite (exactement comme elle apparaît dans le document)\n- La référence précise dans le PDF (numéro de page et emplacement)\n- Un score de confiance entre 0 et 1\n\nSi une information n'est pas trouvée dans le document, indique \"Non trouvé\" comme valeur avec une confiance de 0.\n\nRéponds UNIQUEMENT avec un JSON valide au format suivant, sans aucun texte autour :\n{\n  \"extractions\": [\n    {\n      \"field_id\": \"id_du_champ\",\n      \"value\": \"la valeur extraite\",\n      \"pdf_reference\": \"Page X, paragraphe/article Y\",\n      \"confidence\": 0.95\n    }\n  ]\n}",
+  "fields": [
+    {
+      "id": "denomination",
+      "label": "Dénomination sociale",
+      "description": "Le nom officiel de la société tel qu'il figure dans les statuts"
+    },
+    {
+      "id": "forme_juridique",
+      "label": "Forme juridique",
+      "description": "La forme juridique de la société (SAS, SARL, SA, SCI, etc.)"
+    },
+    {
+      "id": "capital_social",
+      "label": "Capital social",
+      "description": "Le montant du capital social et sa répartition (nombre et valeur nominale des actions/parts)"
+    },
+    {
+      "id": "siege_social",
+      "label": "Siège social",
+      "description": "L'adresse complète du siège social"
+    },
+    {
+      "id": "objet_social",
+      "label": "Objet social",
+      "description": "L'objet social de la société tel que décrit dans les statuts"
+    },
+    {
+      "id": "duree",
+      "label": "Durée",
+      "description": "La durée de la société (généralement 99 ans) et la date de début"
+    },
+    {
+      "id": "date_constitution",
+      "label": "Date de constitution",
+      "description": "La date de constitution ou de signature des statuts"
+    },
+    {
+      "id": "dirigeants",
+      "label": "Dirigeants",
+      "description": "Les noms, prénoms et qualités des dirigeants (Président, Directeur Général, Gérant, etc.)"
+    },
+    {
+      "id": "repartition_capital",
+      "label": "Répartition du capital",
+      "description": "La répartition du capital entre les associés/actionnaires avec le nombre de parts/actions de chacun"
+    }
+  ]
+}

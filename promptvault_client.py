@@ -35,12 +35,43 @@ class PromptVaultClient:
             return None
         return [FieldDefinition(**f) for f in content.get("fields", [])]
 
-    def get_instructions(self, slug: str, project_slug: str) -> str:
-        """Fetch extraction instructions from PromptManager."""
-        content = self.get_prompt_data(slug, project_slug)
-        if content is None:
+    def get_instructions(self, project_slug: str) -> str:
+        """Fetch extraction instructions from the shared 'extraction-instructions' prompt."""
+        try:
+            resp = requests.get(
+                f"{self.base_url}/api/prompts/extraction-instructions",
+                headers=self._headers(),
+                params={"projectSlug": project_slug},
+                timeout=15,
+            )
+            if resp.status_code != 200:
+                return ""
+            data = resp.json()
+            return data.get("content", "")
+        except Exception:
             return ""
-        return content.get("instructions", "")
+
+    def save_instructions(
+        self,
+        project_slug: str,
+        instructions: str,
+        message: str = "Mis à jour depuis l'interface Extracteur",
+    ) -> bool:
+        """Save extraction instructions to the shared 'extraction-instructions' prompt."""
+        try:
+            resp = requests.post(
+                f"{self.base_url}/api/prompts/extraction-instructions",
+                headers=self._headers(),
+                json={
+                    "content": instructions,
+                    "message": message,
+                    "projectSlug": project_slug,
+                },
+                timeout=15,
+            )
+            return resp.status_code in (200, 201)
+        except Exception:
+            return False
 
     def save_fields(
         self,
@@ -51,16 +82,17 @@ class PromptVaultClient:
         instructions: str = "",
         message: str = "Mis à jour depuis l'interface Extracteur",
     ) -> bool:
-        """Save field definitions + instructions to PromptManager. Returns True on success."""
+        """Save field definitions to PromptManager. Instructions are saved separately."""
         payload = {
             "version": "1.0",
             "doc_type": slug,
             "doc_type_label": doc_type_label,
             "fields": [f.model_dump() for f in fields],
         }
-        if instructions:
-            payload["instructions"] = instructions
         content = json.dumps(payload, ensure_ascii=False, indent=2)
+        # Also save instructions to shared prompt if provided
+        if instructions:
+            self.save_instructions(project_slug, instructions, message)
         try:
             resp = requests.post(
                 f"{self.base_url}/api/prompts/{slug}",

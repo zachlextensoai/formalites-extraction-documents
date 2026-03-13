@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:8000";
+export const API_BASE = "http://localhost:8000";
 
 export interface Field {
   id: string;
@@ -88,5 +88,21 @@ export async function saveFields(params: {
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: "Save failed" }));
     throw new Error(err.detail || "Save failed");
+  }
+}
+
+export async function saveInstructions(params: {
+  instructions: string;
+}): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/instructions/save`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res
+      .json()
+      .catch(() => ({ detail: "Save instructions failed" }));
+    throw new Error(err.detail || "Save instructions failed");
   }
 }

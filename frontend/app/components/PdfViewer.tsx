@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Viewer, Worker, SpecialZoomLevel } from "@react-pdf-viewer/core";
 import { defaultLayoutPlugin } from "@react-pdf-viewer/default-layout";
 
@@ -22,25 +22,32 @@ export default function PdfViewer({
   const { searchPluginInstance } =
     defaultLayoutPluginInstance.toolbarPluginInstance;
 
-  // Navigate to page — only when there is NO highlight keyword
-  // (when there IS a keyword, the highlight effect handles navigation via jumpToMatch)
-  useEffect(() => {
-    if (targetPage != null && targetPage >= 1 && !highlightKeyword) {
-      const timer = setTimeout(() => {
-        defaultLayoutPluginInstance.toolbarPluginInstance.pageNavigationPluginInstance.jumpToPage(
-          targetPage - 1
-        );
-      }, 300);
-      return () => clearTimeout(timer);
-    }
-  }, [targetPage, highlightKeyword]);
+  // Track a combined "navigation request" counter to trigger effects
+  const navRequestRef = useRef(0);
 
-  // Highlight keyword + jump to match on the correct page
+  // Always navigate to the page first, then attempt highlight
   useEffect(() => {
+    if (targetPage == null || targetPage < 1) return;
+
+    navRequestRef.current += 1;
+    const currentNav = navRequestRef.current;
+    let cancelled = false;
+
+    // Step 1: Navigate to the page immediately
+    const navTimer = setTimeout(() => {
+      if (cancelled) return;
+      defaultLayoutPluginInstance.toolbarPluginInstance.pageNavigationPluginInstance.jumpToPage(
+        targetPage - 1
+      );
+    }, 200);
+
+    // Step 2: Attempt highlight if we have a keyword (text layer may or may not exist)
+    let highlightTimer: ReturnType<typeof setTimeout> | null = null;
     if (highlightKeyword) {
-      let cancelled = false;
-      const timer = setTimeout(async () => {
-        // Build candidates from most specific to least
+      highlightTimer = setTimeout(async () => {
+        if (cancelled || navRequestRef.current !== currentNav) return;
+
+        // Build candidates from most specific to least specific
         const candidates: string[] = [];
         const trimmed = highlightKeyword.trim();
         candidates.push(trimmed);
@@ -58,19 +65,18 @@ export default function PdfViewer({
 
         for (const candidate of candidates) {
           if (cancelled) return;
-          const matches = await searchPluginInstance.highlight([
-            { keyword: candidate, matchCase: false },
-          ]);
-          if (matches.length > 0) {
-            // Jump to the match on the target page instead of the first match
-            if (targetPage != null && targetPage >= 1) {
-              const pageIdx = targetPage - 1; // 0-indexed
-              // Find the first match on the target page
+          try {
+            const matches = await searchPluginInstance.highlight([
+              { keyword: candidate, matchCase: false },
+            ]);
+            if (matches.length > 0) {
+              // Jump to the match closest to our target page
+              const pageIdx = targetPage - 1;
               const idx = matches.findIndex((m) => m.pageIndex === pageIdx);
               if (idx >= 0) {
                 searchPluginInstance.jumpToMatch(idx);
               } else {
-                // No match on target page — find nearest page match
+                // Find nearest page match
                 let closestIdx = 0;
                 let minDist = Infinity;
                 matches.forEach((m, i) => {
@@ -82,19 +88,28 @@ export default function PdfViewer({
                 });
                 searchPluginInstance.jumpToMatch(closestIdx);
               }
+              break;
             }
-            break;
+          } catch {
+            // highlight not available (e.g. no text layer) — page nav already handled it
           }
         }
-      }, 400);
-      return () => {
-        cancelled = true;
-        clearTimeout(timer);
-      };
+      }, 600);
     } else {
-      searchPluginInstance.clearHighlights();
+      // No keyword — clear any previous highlights
+      try {
+        searchPluginInstance.clearHighlights();
+      } catch {
+        // ignore
+      }
     }
-  }, [highlightKeyword, targetPage]);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(navTimer);
+      if (highlightTimer) clearTimeout(highlightTimer);
+    };
+  }, [targetPage, highlightKeyword]);
 
   return (
     <div className="h-full w-full">

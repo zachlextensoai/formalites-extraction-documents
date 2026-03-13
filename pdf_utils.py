@@ -45,7 +45,7 @@ def _extract_text_ocr(file_bytes: bytes) -> tuple[list[str], int]:
     import pytesseract
 
     lang = _ocr_lang()
-    images = convert_from_bytes(file_bytes, dpi=300)
+    images = convert_from_bytes(file_bytes, dpi=200)  # 200 DPI = good balance speed/quality
     page_texts = [pytesseract.image_to_string(img, lang=lang).strip() for img in images]
     return page_texts, len(images)
 

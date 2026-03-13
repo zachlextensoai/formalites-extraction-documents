@@ -8,6 +8,8 @@ import {
   uploadPdf,
   runExtraction,
   saveFields,
+  saveInstructions,
+  API_BASE,
   type Field,
   type ExtractionResult,
   type AppConfig,
@@ -87,6 +89,7 @@ export default function Home() {
   const [results, setResults] = useState<ExtractionResult[]>([]);
   const [extracting, setExtracting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savingInstructions, setSavingInstructions] = useState(false);
   const [uploading, setUploading] = useState(false);
 
   // --- Toast ---
@@ -180,6 +183,8 @@ export default function Home() {
         instructions,
       });
       setResults(res.results);
+      // Switch to backend-served PDF (may have OCR text layer for highlights)
+      setPdfUrl(`${API_BASE}/api/pdf/${uploadId}`);
       notify(`${res.results.length} champ(s) extraits`, "success");
     } catch (err: unknown) {
       notify(
@@ -208,6 +213,25 @@ export default function Home() {
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveInstructions = async () => {
+    if (!config?.has_promptvault) {
+      notify("PromptVault non configuré", "warning");
+      return;
+    }
+    setSavingInstructions(true);
+    try {
+      await saveInstructions({ instructions });
+      notify("Instructions sauvegardées", "success");
+    } catch (err: unknown) {
+      notify(
+        err instanceof Error ? err.message : "Erreur lors de la sauvegarde",
+        "error"
+      );
+    } finally {
+      setSavingInstructions(false);
     }
   };
 
@@ -371,11 +395,11 @@ export default function Home() {
                   </span>
                   {config.has_promptvault && (
                     <button
-                      onClick={handleSave}
-                      disabled={saving}
+                      onClick={handleSaveInstructions}
+                      disabled={savingInstructions}
                       className="text-xs font-medium text-red-600 hover:text-red-700 disabled:opacity-50"
                     >
-                      {saving ? "Sauvegarde..." : "Sauvegarder le prompt"}
+                      {savingInstructions ? "Sauvegarde..." : "Sauvegarder le prompt"}
                     </button>
                   )}
                 </div>

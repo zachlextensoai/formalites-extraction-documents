@@ -1,11 +1,16 @@
 """FastAPI backend for the Document Extraction app."""
 
+import io
 import json
 import uuid
 from pathlib import Path
 
+import subprocess
+import tempfile
+
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from config import (
@@ -54,9 +59,9 @@ def load_fields(doc_type_slug: str) -> list[FieldDefinition]:
     return load_default_fields(doc_type_slug)
 
 
-def load_instructions(doc_type_slug: str) -> str:
+def load_instructions() -> str:
     if pv_client:
-        instr = pv_client.get_instructions(doc_type_slug, PROMPTVAULT_PROJECT_SLUG)
+        instr = pv_client.get_instructions(PROMPTVAULT_PROJECT_SLUG)
         if instr:
             return instr
     return DEFAULT_INSTRUCTIONS
@@ -77,6 +82,10 @@ class SaveFieldsRequest(BaseModel):
     instructions: str
 
 
+class SaveInstructionsRequest(BaseModel):
+    instructions: str
+
+
 # --- Endpoints ---
 @app.get("/api/config")
 def get_config():
@@ -93,37 +102,114 @@ def get_config():
 def get_fields(doc_type: str):
     """Get field definitions and instructions for a document type."""
     fields = load_fields(doc_type)
-    instructions = load_instructions(doc_type)
+    instructions = load_instructions()
     return {
         "fields": [f.model_dump() for f in fields],
         "instructions": instructions,
     }
 
 
+def _quick_page_count(file_bytes: bytes) -> int:
+    """Get page count quickly without full text extraction."""
+    try:
+        import fitz
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+        count = len(doc)
+        doc.close()
+        return count
+    except Exception:
+        pass
+    try:
+        import pdfplumber
+        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+            return len(pdf.pages)
+    except Exception:
+        return 0
+
+
 @app.post("/api/upload")
 async def upload_pdf(file: UploadFile = File(...)):
-    """Upload a PDF and extract text. Returns upload_id and metadata."""
+    """Upload a PDF. Text extraction is deferred to /api/extract for speed."""
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(400, "Only PDF files are accepted")
 
     content = await file.read()
-    result = extract_text_from_pdf(content)
-
+    page_count = _quick_page_count(content)
     upload_id = uuid.uuid4().hex
+
+    # Store raw bytes — text extraction happens lazily on first extract call
     pdf_store[upload_id] = {
-        "text": result["text"],
-        "page_count": result["page_count"],
-        "used_ocr": result["used_ocr"],
+        "raw_bytes": content,
+        "text": None,  # extracted lazily
+        "page_count": page_count,
+        "used_ocr": False,
         "filename": file.filename,
     }
 
     return {
         "upload_id": upload_id,
         "filename": file.filename,
-        "page_count": result["page_count"],
-        "used_ocr": result["used_ocr"],
-        "truncated": result["truncated"],
+        "page_count": page_count,
+        "used_ocr": False,
+        "truncated": False,
     }
+
+
+def _ensure_text_extracted(pdf_data: dict) -> None:
+    """Lazily extract text from stored PDF bytes (only once)."""
+    if pdf_data["text"] is not None:
+        return
+    raw = pdf_data.get("raw_bytes")
+    if not raw:
+        pdf_data["text"] = ""
+        return
+    result = extract_text_from_pdf(raw)
+    pdf_data["text"] = result["text"]
+    pdf_data["page_count"] = result["page_count"]
+    pdf_data["used_ocr"] = result["used_ocr"]
+
+    # If OCR was needed, create a searchable PDF with text layer for the viewer
+    if result["used_ocr"]:
+        pdf_data["searchable_pdf"] = _create_searchable_pdf(raw)
+
+
+def _create_searchable_pdf(raw_bytes: bytes) -> bytes | None:
+    """Use ocrmypdf to add an invisible text layer to a scanned PDF."""
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as inp:
+            inp.write(raw_bytes)
+            inp_path = inp.name
+        out_path = inp_path.replace(".pdf", "_ocr.pdf")
+        subprocess.run(
+            ["ocrmypdf", "--skip-text", "-l", "fra", "--jobs", "2",
+             "--optimize", "0", inp_path, out_path],
+            capture_output=True, timeout=120,
+        )
+        if Path(out_path).exists():
+            result = Path(out_path).read_bytes()
+            Path(inp_path).unlink(missing_ok=True)
+            Path(out_path).unlink(missing_ok=True)
+            return result
+    except Exception:
+        pass
+    return None
+
+
+@app.get("/api/pdf/{upload_id}")
+def get_pdf(upload_id: str):
+    """Serve the PDF file (searchable OCR version if available)."""
+    pdf_data = pdf_store.get(upload_id)
+    if not pdf_data:
+        raise HTTPException(404, "Upload not found")
+    # Prefer searchable OCR version, fall back to original
+    content = pdf_data.get("searchable_pdf") or pdf_data.get("raw_bytes")
+    if not content:
+        raise HTTPException(404, "PDF data not found")
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"inline; filename=\"{pdf_data.get('filename', 'document.pdf')}\""},
+    )
 
 
 @app.post("/api/extract")
@@ -135,6 +221,9 @@ def extract(req: ExtractRequest):
     pdf_data = pdf_store.get(req.upload_id)
     if not pdf_data:
         raise HTTPException(404, "Upload not found. Please re-upload the PDF.")
+
+    # Lazy text extraction (may OCR — can take a while for scanned PDFs)
+    _ensure_text_extracted(pdf_data)
 
     if not pdf_data["text"]:
         raise HTTPException(422, "No text could be extracted from this PDF")
@@ -180,6 +269,21 @@ def save_fields(req: SaveFieldsRequest):
     if ok:
         return {"status": "ok"}
     raise HTTPException(500, "Failed to save fields")
+
+
+@app.post("/api/instructions/save")
+def save_instructions(req: SaveInstructionsRequest):
+    """Save extraction instructions to their dedicated PromptVault prompt."""
+    if not pv_client:
+        raise HTTPException(500, "PromptVault not configured")
+
+    ok = pv_client.save_instructions(
+        PROMPTVAULT_PROJECT_SLUG,
+        req.instructions,
+    )
+    if ok:
+        return {"status": "ok"}
+    raise HTTPException(500, "Failed to save instructions")
 
 
 if __name__ == "__main__":

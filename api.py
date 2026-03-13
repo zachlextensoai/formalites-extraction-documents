@@ -5,9 +5,6 @@ import json
 import uuid
 from pathlib import Path
 
-import subprocess
-import tempfile
-
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
@@ -163,37 +160,15 @@ def _ensure_text_extracted(pdf_data: dict) -> None:
     if not raw:
         pdf_data["text"] = ""
         return
-    result = extract_text_from_pdf(raw)
+    # Extract text and get searchable PDF in one pass (avoids running OCR twice)
+    result = extract_text_from_pdf(raw, return_searchable_pdf=True)
     pdf_data["text"] = result["text"]
     pdf_data["page_count"] = result["page_count"]
     pdf_data["used_ocr"] = result["used_ocr"]
     pdf_data["extraction_error"] = result.get("error")
 
-    # If OCR was needed, create a searchable PDF with text layer for the viewer
-    if result["used_ocr"]:
-        pdf_data["searchable_pdf"] = _create_searchable_pdf(raw)
-
-
-def _create_searchable_pdf(raw_bytes: bytes) -> bytes | None:
-    """Use ocrmypdf to add an invisible text layer to a scanned PDF."""
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as inp:
-            inp.write(raw_bytes)
-            inp_path = inp.name
-        out_path = inp_path.replace(".pdf", "_ocr.pdf")
-        subprocess.run(
-            ["ocrmypdf", "--skip-text", "-l", "fra", "--jobs", "2",
-             "--optimize", "0", inp_path, out_path],
-            capture_output=True, timeout=120,
-        )
-        if Path(out_path).exists():
-            result = Path(out_path).read_bytes()
-            Path(inp_path).unlink(missing_ok=True)
-            Path(out_path).unlink(missing_ok=True)
-            return result
-    except Exception:
-        pass
-    return None
+    if result.get("searchable_pdf"):
+        pdf_data["searchable_pdf"] = result["searchable_pdf"]
 
 
 @app.get("/api/pdf/{upload_id}")

@@ -35,8 +35,15 @@ app.add_middleware(
 
 pv_client = PromptVaultClient(PROMPTVAULT_BASE_URL, PROMPTVAULT_API_KEY) if PROMPTVAULT_API_KEY else None
 
-# In-memory store for uploaded PDF text (per session)
+MAX_PDF_STORE_SIZE = 5
+
 pdf_store: dict[str, dict] = {}
+
+
+def _evict_pdf_store():
+    while len(pdf_store) >= MAX_PDF_STORE_SIZE:
+        oldest_key = next(iter(pdf_store))
+        del pdf_store[oldest_key]
 
 
 # --- Helpers ---
@@ -135,7 +142,8 @@ async def upload_pdf(file: UploadFile = File(...)):
     page_count = _quick_page_count(content)
     upload_id = uuid.uuid4().hex
 
-    # Store raw bytes — text extraction happens lazily on first extract call
+    _evict_pdf_store()
+
     pdf_store[upload_id] = {
         "raw_bytes": content,
         "text": None,  # extracted lazily

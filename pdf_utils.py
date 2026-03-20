@@ -18,7 +18,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 MAX_TEXT_LENGTH = 100_000
-OCR_DPI = 300
+OCR_DPI = 150
 MIN_TEXT_LENGTH = 30
 MIN_PRINTABLE_RATIO = 0.70
 MIN_WORD_COUNT = 5
@@ -178,7 +178,7 @@ def _ocr_pages_with_ocrmypdf(
             rotate_pages=True,
             oversample=OCR_DPI,
             optimize=0,             # skip PDF optimization for speed
-            jobs=2,
+            jobs=1,
             progress_bar=False,
             output_type="pdf",
         )

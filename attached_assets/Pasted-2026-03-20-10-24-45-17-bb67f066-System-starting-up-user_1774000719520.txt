@@ -1,0 +1,116 @@
+2026-03-20 10:24:45.17
+bb67f066
+System
+starting up user application
+2026-03-20 10:24:45.17
+bb67f066
+System
+metasidecar: loaded enterprise status from environment is_enterprise=false
+2026-03-20 10:24:45.18
+bb67f066
+System
+forwarding local port 5000 to external port 80 (mapped as 1104)
+2026-03-20 10:24:45.33
+bb67f066
+User
+Installing Python dependencies...
+2026-03-20 10:24:50.25
+bb67f066
+User
+Waiting for backend to be ready...
+2026-03-20 10:24:50.25
+bb67f066
+User
+Starting backend on port 8000...
+2026-03-20 10:24:54.94
+bb67f066
+User
+INFO: Started server process [25]
+2026-03-20 10:24:54.94
+bb67f066
+User
+INFO: Application startup complete.
+2026-03-20 10:24:54.94
+bb67f066
+User
+INFO: Waiting for application startup.
+2026-03-20 10:24:54.94
+bb67f066
+User
+INFO: Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2026-03-20 10:24:55.69
+bb67f066
+User
+INFO: 127.0.0.1:40862 - "GET /api/config HTTP/1.1" 200 OK
+2026-03-20 10:24:55.69
+bb67f066
+User
+Backend is ready.
+2026-03-20 10:24:55.69
+bb67f066
+User
+Starting frontend on port 5000...
+2026-03-20 10:24:56.72
+bb67f066
+User
+> next start -p 5000 -H 0.0.0.0
+2026-03-20 10:24:56.72
+bb67f066
+User
+> frontend@0.1.0 start
+2026-03-20 10:24:57.38
+bb67f066
+User
+▲ Next.js 16.1.6
+2026-03-20 10:24:57.38
+bb67f066
+User
+✓ Starting...
+2026-03-20 10:24:57.38
+bb67f066
+User
+- Network: http://0.0.0.0:5000
+2026-03-20 10:24:57.38
+bb67f066
+User
+- Local: http://localhost:5000
+2026-03-20 10:24:58.65
+bb67f066
+User
+✓ Ready in 1663ms
+2026-03-20 10:25:09.22
+bb67f066
+User
+INFO: 127.0.0.1:55124 - "GET /api/config HTTP/1.1" 200 OK
+2026-03-20 10:25:10.07
+bb67f066
+User
+INFO: 127.0.0.1:55124 - "GET /api/fields/pv-assemblee-generale HTTP/1.1" 200 OK
+2026-03-20 10:28:46.65
+f628ca2b
+System
+system: received signal terminated
+2026-03-20 10:29:15.66
+bb67f066
+User
+INFO: 127.0.0.1:59176 - "GET /api/config HTTP/1.1" 200 OK
+2026-03-20 10:29:17.17
+bb67f066
+User
+INFO: 127.0.0.1:59176 - "GET /api/fields/pv-assemblee-generale HTTP/1.1" 200 OK
+2026-03-20 10:32:02.88
+bb67f066
+User
+INFO: 127.0.0.1:59414 - "GET /api/fields/statuts-societe HTTP/1.1" 200 OK
+2026-03-20 10:32:09.80
+bb67f066
+User
+INFO: 127.0.0.1:59822 - "POST /api/upload HTTP/1.1" 200 OK
+2026-03-20 10:32:21.09
+bb67f066
+User
+This PDF is marked as a Tagged PDF. This often indicates that the PDF was generated from an office document and does not need OCR. PDF pages processed by OCRmyPDF may not be tagged correctly.
+2026-03-20 10:32:48.34
+bb67f066
+User
+start-prod.sh: line 37: 25 Killed python3 -m uvicorn api:app --host 0.0.0.0 --port 8000

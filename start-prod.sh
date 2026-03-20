@@ -11,10 +11,10 @@ cleanup() {
 trap cleanup EXIT
 
 echo "Installing Python dependencies..."
-.venv/bin/python -m pip install -r requirements.txt -q 2>&1 || echo "Warning: pip install had issues, continuing..."
+pip install -r requirements.txt -q 2>&1 || echo "Warning: pip install had issues, continuing..."
 
 echo "Starting backend on port 8000..."
-.venv/bin/python -m uvicorn api:app --host 0.0.0.0 --port 8000 &
+python3 -m uvicorn api:app --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 
 echo "Waiting for backend to be ready..."

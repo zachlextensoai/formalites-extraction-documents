@@ -178,6 +178,7 @@ def _ensure_text_extracted(pdf_data: dict) -> None:
 
     if result.get("searchable_pdf"):
         pdf_data["searchable_pdf"] = result["searchable_pdf"]
+        del pdf_data["raw_bytes"]
 
 
 @app.get("/api/pdf/{upload_id}")

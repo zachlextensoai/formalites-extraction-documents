@@ -2,7 +2,7 @@
 
 Phase 1: Extract text per page with PyMuPDF, assess quality per page.
 Phase 2: Batch OCR only the pages that need it via ocrmypdf (with deskew,
-         denoise, rotation correction, 300 DPI). Falls back to direct
+         denoise, rotation correction, 150 DPI). Falls back to direct
          tesseract + Pillow preprocessing if ocrmypdf fails.
 """
 

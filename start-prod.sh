@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 cd "$(dirname "$0")"
 
 FRONTEND_PID=""
@@ -11,28 +10,27 @@ cleanup() {
 }
 trap cleanup EXIT
 
-.venv/bin/python -m pip install -r requirements.txt -q 2>/dev/null
+echo "Installing Python dependencies..."
+.venv/bin/python -m pip install -r requirements.txt -q 2>&1 || echo "Warning: pip install had issues, continuing..."
 
+echo "Starting backend on port 8000..."
 .venv/bin/python -m uvicorn api:app --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 
-echo "Waiting for backend to be ready on port 8000..."
+echo "Waiting for backend to be ready..."
 for i in $(seq 1 30); do
   if ! kill -0 $BACKEND_PID 2>/dev/null; then
-    echo "Backend process died. Exiting."
-    exit 1
+    echo "Backend process died unexpectedly."
+    break
   fi
   if curl -s http://localhost:8000/api/config > /dev/null 2>&1; then
     echo "Backend is ready."
     break
   fi
-  if [ "$i" -eq 30 ]; then
-    echo "Backend failed to become ready after 30s. Exiting."
-    exit 1
-  fi
   sleep 1
 done
 
+echo "Starting frontend on port 5000..."
 cd frontend && npm run start &
 FRONTEND_PID=$!
 

@@ -1,0 +1,174 @@
+2026-03-20 10:03:43.81
+f628ca2b
+User
+at (Error: connect ECONNREFUSED 127.0.0.1:8000) {
+2026-03-20 10:03:43.81
+f628ca2b
+User
+errno: -111,
+2026-03-20 10:03:43.81
+f628ca2b
+User
+code: 'ECONNREFUSED',
+2026-03-20 10:03:43.81
+f628ca2b
+User
+Error: connect ECONNREFUSED 127.0.0.1:8000
+2026-03-20 10:03:43.81
+f628ca2b
+User
+code: 'ECONNREFUSED',
+2026-03-20 10:03:43.81
+f628ca2b
+User
+port: 8000
+2026-03-20 10:03:43.81
+f628ca2b
+User
+syscall: 'connect',
+2026-03-20 10:03:43.81
+f628ca2b
+User
+errno: -111,
+2026-03-20 10:03:43.81
+f628ca2b
+User
+address: '127.0.0.1',
+2026-03-20 10:03:43.81
+f628ca2b
+User
+}
+2026-03-20 10:03:43.81
+f628ca2b
+User
+at (Error: connect ECONNREFUSED 127.0.0.1:8000) {
+2026-03-20 10:03:43.81
+f628ca2b
+User
+at (Error: connect ECONNREFUSED 127.0.0.1:8000) {
+2026-03-20 10:03:43.81
+f628ca2b
+User
+}
+2026-03-20 10:03:43.81
+f628ca2b
+User
+address: '127.0.0.1',
+2026-03-20 10:03:43.81
+f628ca2b
+User
+errno: -111,
+2026-03-20 10:03:43.81
+f628ca2b
+User
+syscall: 'connect',
+2026-03-20 10:03:43.81
+f628ca2b
+User
+port: 8000
+2026-03-20 10:03:43.81
+f628ca2b
+User
+code: 'ECONNREFUSED',
+2026-03-20 10:03:43.81
+f628ca2b
+User
+Error: connect ECONNREFUSED 127.0.0.1:8000
+2026-03-20 10:03:43.81
+f628ca2b
+User
+at (Error: connect ECONNREFUSED 127.0.0.1:8000) {
+2026-03-20 10:03:43.81
+f628ca2b
+User
+}
+2026-03-20 10:03:43.81
+f628ca2b
+User
+address: '127.0.0.1',
+2026-03-20 10:03:43.81
+f628ca2b
+User
+errno: -111,
+2026-03-20 10:03:43.81
+f628ca2b
+User
+syscall: 'connect',
+2026-03-20 10:03:43.81
+f628ca2b
+User
+port: 8000
+2026-03-20 10:03:43.81
+f628ca2b
+User
+code: 'ECONNREFUSED',
+2026-03-20 10:03:43.81
+f628ca2b
+User
+Error: connect ECONNREFUSED 127.0.0.1:8000
+2026-03-20 10:03:51.34
+f628ca2b
+User
+errno: -111,
+2026-03-20 10:03:51.34
+f628ca2b
+User
+Failed to proxy http://localhost:8000/api/config Error: connect ECONNREFUSED 127.0.0.1:8000
+2026-03-20 10:03:51.34
+f628ca2b
+User
+port: 8000
+2026-03-20 10:03:51.34
+f628ca2b
+User
+errno: -111,
+2026-03-20 10:03:51.34
+f628ca2b
+User
+code: 'ECONNREFUSED',
+2026-03-20 10:03:51.34
+f628ca2b
+User
+at (Error: connect ECONNREFUSED 127.0.0.1:8000) {
+2026-03-20 10:03:51.34
+f628ca2b
+User
+address: '127.0.0.1',
+2026-03-20 10:03:51.34
+f628ca2b
+User
+at (Error: connect ECONNREFUSED 127.0.0.1:8000) {
+2026-03-20 10:03:51.34
+f628ca2b
+User
+port: 8000
+2026-03-20 10:03:51.34
+f628ca2b
+User
+Error: connect ECONNREFUSED 127.0.0.1:8000
+2026-03-20 10:03:51.34
+f628ca2b
+User
+address: '127.0.0.1',
+2026-03-20 10:03:51.34
+f628ca2b
+User
+code: 'ECONNREFUSED',
+2026-03-20 10:03:51.34
+f628ca2b
+User
+syscall: 'connect',
+2026-03-20 10:03:51.34
+f628ca2b
+User
+}
+2026-03-20 10:03:51.34
+f628ca2b
+User
+syscall: 'connect',
+2026-03-20 10:03:51.34
+f628ca2b
+User
+}
+Wrap
+Colors

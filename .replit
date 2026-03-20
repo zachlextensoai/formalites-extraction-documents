@@ -40,6 +40,6 @@ channel = "stable-25_05"
 packages = ["tesseract", "poppler-utils", "tesseract4"]
 
 [deployment]
-build = ["sh", "-c", "cd frontend && npm install && npm run build"]
+build = ["sh", "-c", ".venv/bin/python -m pip install -r requirements.txt -q && cd frontend && npm install && npm run build"]
 run = ["sh", "-c", "bash start-prod.sh"]
 deploymentTarget = "autoscale"

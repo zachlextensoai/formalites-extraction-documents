@@ -85,6 +85,9 @@ export default function Home() {
   const [targetPage, setTargetPage] = useState<number | null>(null);
   const [highlightKeyword, setHighlightKeyword] = useState<string | null>(null);
 
+  // --- Ordre client text state ---
+  const [ordreClientText, setOrdreClientText] = useState<string>("");
+
   // --- Results state ---
   const [results, setResults] = useState<ExtractionResult[]>([]);
   const [extracting, setExtracting] = useState(false);
@@ -131,6 +134,7 @@ export default function Home() {
       setFields(data.fields);
       setInstructions(data.instructions);
       setResults([]);
+      setOrdreClientText("");
     });
   }, [docTypeSlug]);
 
@@ -163,10 +167,19 @@ export default function Home() {
   };
 
   // --- Handle extraction ---
+  const isOrdreClient = docTypeSlug === "ordre-client";
+
   const handleExtract = async () => {
-    if (!uploadId) {
-      notify("Importez d'abord un document PDF", "warning");
-      return;
+    if (isOrdreClient) {
+      if (!ordreClientText.trim()) {
+        notify("Collez d'abord le texte de l'ordre client", "warning");
+        return;
+      }
+    } else {
+      if (!uploadId) {
+        notify("Importez d'abord un document PDF", "warning");
+        return;
+      }
     }
     if (fields.length === 0) {
       notify("Aucun champ défini", "warning");
@@ -176,15 +189,19 @@ export default function Home() {
     setExtracting(true);
     try {
       const res = await runExtraction({
-        upload_id: uploadId,
+        ...(isOrdreClient
+          ? { raw_text: ordreClientText }
+          : { upload_id: uploadId }),
         doc_type: docTypeSlug,
         model: modelId,
         fields,
         instructions,
       });
       setResults(res.results);
-      // Switch to backend-served PDF (may have OCR text layer for highlights)
-      setPdfUrl(`${API_BASE}/api/pdf/${uploadId}`);
+      if (!isOrdreClient) {
+        // Switch to backend-served PDF (may have OCR text layer for highlights)
+        setPdfUrl(`${API_BASE}/api/pdf/${uploadId}`);
+      }
       notify(`${res.results.length} champ(s) extraits`, "success");
     } catch (err: unknown) {
       notify(
@@ -454,7 +471,7 @@ export default function Home() {
 
                       return (
                         <tr key={field.id} className="group hover:bg-gray-50/50">
-                          <td className="px-3 py-1.5">
+                          <td className="px-3 py-1.5 align-top">
                             <input
                               type="text"
                               value={field.label}
@@ -465,15 +482,21 @@ export default function Home() {
                               className="w-full rounded border-transparent bg-transparent px-1 py-0.5 text-sm text-gray-800 focus:border-red-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-red-300"
                             />
                           </td>
-                          <td className="px-3 py-1.5">
-                            <input
-                              type="text"
+                          <td className="px-3 py-1.5 align-top">
+                            <textarea
+                              ref={(el) => {
+                                if (el) {
+                                  el.style.height = "auto";
+                                  el.style.height = el.scrollHeight + "px";
+                                }
+                              }}
                               value={field.description}
                               onChange={(e) =>
                                 updateField(i, "description", e.target.value)
                               }
                               placeholder="Description du champ"
-                              className="w-full rounded border-transparent bg-transparent px-1 py-0.5 text-sm text-gray-600 focus:border-red-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-red-300"
+                              rows={1}
+                              className="w-full resize-none overflow-hidden rounded border-transparent bg-transparent px-1 py-0.5 text-sm text-gray-600 focus:border-red-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-red-300"
                             />
                           </td>
                           {results.length > 0 && (
@@ -570,7 +593,7 @@ export default function Home() {
             <div className="flex gap-3">
               <button
                 onClick={handleExtract}
-                disabled={extracting || !uploadId || fields.length === 0}
+                disabled={extracting || (!isOrdreClient && !uploadId) || (isOrdreClient && !ordreClientText.trim()) || fields.length === 0}
                 className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {extracting ? (
@@ -663,66 +686,86 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Right panel - PDF Viewer */}
+        {/* Right panel - PDF Viewer or Ordre client text */}
         <div className="flex w-1/2 flex-col bg-gray-100">
-          <div className="flex items-center gap-3 border-b bg-white px-5 py-3">
-            <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:border-red-400 hover:bg-red-50 hover:text-red-600">
-              <svg
-                className="h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+          {isOrdreClient ? (
+            <>
+              <div className="flex items-center gap-3 border-b bg-white px-5 py-3">
+                <span className="text-sm font-medium text-gray-700">
+                  Texte de l&apos;ordre client
+                </span>
+              </div>
+              <div className="flex-1 overflow-hidden p-4">
+                <textarea
+                  value={ordreClientText}
+                  onChange={(e) => setOrdreClientText(e.target.value)}
+                  placeholder="Collez ou saisissez le texte de l'ordre client ici..."
+                  className="h-full w-full resize-none rounded-lg border border-gray-300 bg-white p-4 text-sm text-gray-700 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
                 />
-              </svg>
-              {uploading ? "Chargement..." : "Importer un PDF"}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
-            </label>
-            {uploadInfo && (
-              <span className="text-sm text-gray-500">
-                {uploadInfo.filename} &mdash; {uploadInfo.page_count} page(s)
-                {uploadInfo.used_ocr && (
-                  <span className="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                    OCR
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-3 border-b bg-white px-5 py-3">
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:border-red-400 hover:bg-red-50 hover:text-red-600">
+                  <svg
+                    className="h-4 w-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                    />
+                  </svg>
+                  {uploading ? "Chargement..." : "Importer un PDF"}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                </label>
+                {uploadInfo && (
+                  <span className="text-sm text-gray-500">
+                    {uploadInfo.filename} &mdash; {uploadInfo.page_count} page(s)
+                    {uploadInfo.used_ocr && (
+                      <span className="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                        OCR
+                      </span>
+                    )}
                   </span>
                 )}
-              </span>
-            )}
-          </div>
-
-          <div className="flex-1 overflow-hidden">
-            {pdfUrl ? (
-              <PdfViewer fileUrl={pdfUrl} targetPage={targetPage} highlightKeyword={highlightKeyword} />
-            ) : (
-              <div className="flex h-full flex-col items-center justify-center gap-3 text-gray-400">
-                <svg
-                  className="h-16 w-16"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={1}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                  />
-                </svg>
-                <p className="text-sm">Importez un PDF pour commencer</p>
               </div>
-            )}
-          </div>
+
+              <div className="flex-1 overflow-hidden">
+                {pdfUrl ? (
+                  <PdfViewer fileUrl={pdfUrl} targetPage={targetPage} highlightKeyword={highlightKeyword} />
+                ) : (
+                  <div className="flex h-full flex-col items-center justify-center gap-3 text-gray-400">
+                    <svg
+                      className="h-16 w-16"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={1}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                      />
+                    </svg>
+                    <p className="text-sm">Importez un PDF pour commencer</p>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
 

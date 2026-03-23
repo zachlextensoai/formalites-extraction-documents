@@ -66,11 +66,12 @@ def load_instructions() -> str:
 
 # --- Request/Response models ---
 class ExtractRequest(BaseModel):
-    upload_id: str
+    upload_id: str = ""
     doc_type: str
     model: str
     fields: list[FieldDefinition]
     instructions: str
+    raw_text: str = ""
 
 
 class SaveFieldsRequest(BaseModel):
@@ -196,20 +197,24 @@ def get_pdf(upload_id: str):
 
 @app.post("/api/extract")
 def extract(req: ExtractRequest):
-    """Run LLM extraction on an uploaded PDF."""
+    """Run LLM extraction on an uploaded PDF or raw text."""
     if not OPENROUTER_API_KEY:
         raise HTTPException(500, "OpenRouter API key not configured")
 
-    pdf_data = pdf_store.get(req.upload_id)
-    if not pdf_data:
-        raise HTTPException(404, "Upload not found. Please re-upload the PDF.")
-
-    # Lazy text extraction (may OCR — can take a while for scanned PDFs)
-    _ensure_text_extracted(pdf_data)
-
-    if not pdf_data["text"]:
-        error_detail = pdf_data.get("extraction_error") or "No text could be extracted from this PDF"
-        raise HTTPException(422, error_detail)
+    # Determine source text
+    if req.raw_text:
+        text = req.raw_text.strip()
+        if not text:
+            raise HTTPException(422, "Le texte fourni est vide")
+    else:
+        pdf_data = pdf_store.get(req.upload_id)
+        if not pdf_data:
+            raise HTTPException(404, "Upload not found. Please re-upload the PDF.")
+        _ensure_text_extracted(pdf_data)
+        if not pdf_data["text"]:
+            error_detail = pdf_data.get("extraction_error") or "No text could be extracted from this PDF"
+            raise HTTPException(422, error_detail)
+        text = pdf_data["text"]
 
     model_id = None
     for label, mid in AVAILABLE_MODELS.items():
@@ -220,7 +225,7 @@ def extract(req: ExtractRequest):
         model_id = req.model
 
     results = extract_fields(
-        pdf_data["text"],
+        text,
         req.fields,
         OPENROUTER_API_KEY,
         model_id,

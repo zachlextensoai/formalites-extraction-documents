@@ -57,11 +57,12 @@ export async function uploadPdf(file: File): Promise<UploadResponse> {
 }
 
 export async function runExtraction(params: {
-  upload_id: string;
+  upload_id?: string;
   doc_type: string;
   model: string;
   fields: Field[];
   instructions: string;
+  raw_text?: string;
 }): Promise<{ results: ExtractionResult[] }> {
   const res = await fetch(`${API_BASE}/api/extract`, {
     method: "POST",

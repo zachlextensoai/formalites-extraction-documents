@@ -1,0 +1,38 @@
+{
+  "version": "1.0",
+  "doc_type": "ordre-client",
+  "doc_type_label": "Ordre client",
+  "instructions": "Tu es un expert en analyse d'ordres clients pour les formalités juridiques.\nExtrais s'il te plait les informations suivantes de l'ordre client fourni.\n\nPour chaque champ, fournis :\n- La valeur extraite (exactement comme elle apparaît dans le texte)\n- La référence dans le texte (section ou emplacement)\n- Un score de confiance entre 0 et 1\n\nSi une information n'est pas trouvée, indique \"Non trouvé\" comme valeur avec une confiance de 0.\n\nRéponds UNIQUEMENT avec un JSON valide au format suivant, sans aucun texte autour :\n{\n  \"extractions\": [\n    {\n      \"field_id\": \"id_du_champ\",\n      \"value\": \"la valeur extraite\",\n      \"pdf_reference\": \"Section ou emplacement\",\n      \"confidence\": 0.95\n    }\n  ]\n}",
+  "fields": [
+    {
+      "id": "client_name",
+      "label": "Nom du client",
+      "description": "Le nom complet du client qui passe l'ordre"
+    },
+    {
+      "id": "type_formalite",
+      "label": "Type de formalité",
+      "description": "Le type de formalité demandée (constitution, modification, radiation, etc.)"
+    },
+    {
+      "id": "denomination",
+      "label": "Dénomination sociale",
+      "description": "Le nom de la société concernée par la formalité"
+    },
+    {
+      "id": "forme_juridique",
+      "label": "Forme juridique",
+      "description": "La forme juridique de la société (SAS, SARL, SA, SCI, etc.)"
+    },
+    {
+      "id": "siege_social",
+      "label": "Siège social",
+      "description": "L'adresse du siège social de la société"
+    },
+    {
+      "id": "siren_rcs",
+      "label": "SIREN / RCS",
+      "description": "Le numéro SIREN ou d'immatriculation au RCS"
+    }
+  ]
+}

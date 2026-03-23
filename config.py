@@ -10,11 +10,12 @@ PROMPTVAULT_API_KEY = os.getenv("PROMPTVAULT_API_KEY", "")
 PROMPTVAULT_PROJECT_SLUG = os.getenv("PROMPTVAULT_PROJECT_SLUG", "extracteur-documents")
 
 AVAILABLE_MODELS = {
-    "Claude Sonnet 4.6": "anthropic/claude-sonnet-4-6",
     "Gemini 2.5 Flash": "google/gemini-2.5-flash",
+    "Claude Sonnet 4.6": "anthropic/claude-sonnet-4-6",
 }
 
 DOC_TYPES = {
     "PV Assemblée Générale": "pv-assemblee-generale",
     "Statuts de Société": "statuts-societe",
+    "Ordre client": "ordre-client",
 }

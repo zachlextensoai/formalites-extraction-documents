@@ -12,6 +12,9 @@ PROMPTVAULT_PROJECT_SLUG = os.getenv("PROMPTVAULT_PROJECT_SLUG", "extracteur-doc
 AVAILABLE_MODELS = {
     "Gemini 2.5 Flash": "google/gemini-2.5-flash",
     "Claude Sonnet 4.6": "anthropic/claude-sonnet-4-6",
+    "Gemma 4 31B": "google/gemma-4-31b-it",
+    "Mistral Large 2512": "mistralai/mistral-large-2512",
+    "Kimi K2.5": "moonshotai/kimi-k2.5",
 }
 
 DOC_TYPES = {

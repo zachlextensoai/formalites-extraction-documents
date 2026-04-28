@@ -10,11 +10,11 @@ PROMPTVAULT_API_KEY = os.getenv("PROMPTVAULT_API_KEY", "")
 PROMPTVAULT_PROJECT_SLUG = os.getenv("PROMPTVAULT_PROJECT_SLUG", "extracteur-documents")
 
 AVAILABLE_MODELS = {
-    "Gemini 2.5 Flash": "google/gemini-2.5-flash",
     "Claude Sonnet 4.6": "anthropic/claude-sonnet-4-6",
     "Gemma 4 31B": "google/gemma-4-31b-it",
-    "Mistral Large 2512": "mistralai/mistral-large-2512",
-    "Kimi K2.5": "moonshotai/kimi-k2.5",
+    "Qwen 3.5 397B": "qwen/qwen3.5-397b-a17b",
+    "DeepSeek V4 Flash": "deepseek/deepseek-v4-flash",
+    "Qwen 3.6 27B": "qwen/qwen3.6-27b",
 }
 
 DOC_TYPES = {

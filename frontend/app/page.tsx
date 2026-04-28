@@ -30,6 +30,148 @@ function parsePageNumber(ref: string): number | null {
   return m ? parseInt(m[1], 10) : null;
 }
 
+// ---- EML parsing helpers ----
+
+function decodeQuotedPrintable(str: string): string {
+  return str
+    .replace(/=\r?\n/g, "")
+    .replace(/=([0-9A-Fa-f]{2})/g, (_, hex) =>
+      String.fromCharCode(parseInt(hex, 16))
+    );
+}
+
+function decodeBase64Content(str: string, charset = "utf-8"): string {
+  try {
+    const bytes = Uint8Array.from(atob(str.replace(/\s/g, "")), (c) =>
+      c.charCodeAt(0)
+    );
+    return new TextDecoder(charset).decode(bytes);
+  } catch {
+    return atob(str.replace(/\s/g, ""));
+  }
+}
+
+function decodeBodyContent(
+  body: string,
+  encoding: string,
+  charset = "utf-8"
+): string {
+  const enc = encoding.toLowerCase().trim();
+  if (enc === "base64") return decodeBase64Content(body, charset);
+  if (enc === "quoted-printable") return decodeQuotedPrintable(body);
+  return body;
+}
+
+function stripHtmlTags(html: string): string {
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(?:p|div|tr|li|h[1-6])>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function decodeRfc2047(str: string): string {
+  return str.replace(
+    /=\?([^?]+)\?([BbQq])\?([^?]*)\?=/g,
+    (_, charset: string, encoding: string, encoded: string) => {
+      try {
+        if (encoding.toUpperCase() === "B")
+          return decodeBase64Content(encoded, charset);
+        return decodeQuotedPrintable(encoded.replace(/_/g, " "));
+      } catch {
+        return encoded;
+      }
+    }
+  );
+}
+
+function parseEmailHeaders(text: string): Record<string, string> {
+  const headers: Record<string, string> = {};
+  let key = "";
+  for (const line of text.split(/\r?\n/)) {
+    if (/^\s/.test(line) && key) {
+      headers[key] += " " + line.trim();
+    } else {
+      const colon = line.indexOf(":");
+      if (colon > 0) {
+        key = line.slice(0, colon).toLowerCase();
+        headers[key] = line.slice(colon + 1).trim();
+      }
+    }
+  }
+  return headers;
+}
+
+function charsetFrom(contentType: string): string {
+  const m = contentType.match(/charset=["']?([^"';\s]+)["']?/i);
+  return m ? m[1] : "utf-8";
+}
+
+function extractMimeText(rawHeaders: string, body: string): string {
+  const headers = parseEmailHeaders(rawHeaders);
+  const ct = headers["content-type"] || "text/plain";
+  const enc = headers["content-transfer-encoding"] || "";
+  const charset = charsetFrom(ct);
+
+  if (/^multipart\//i.test(ct)) {
+    const bm = ct.match(/boundary=["']?([^"';\s\r\n]+)["']?/i);
+    if (!bm) return "";
+    const escaped = bm[1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const parts = body.split(
+      new RegExp(`--${escaped}(?:--|\\r?\\n|$)`)
+    );
+    let plain = "";
+    let html = "";
+    for (const part of parts) {
+      const sep = part.indexOf("\r\n\r\n") !== -1 ? "\r\n\r\n" : "\n\n";
+      const si = part.indexOf(sep);
+      if (si === -1) continue;
+      const ph = part.slice(0, si);
+      const pb = part.slice(si + sep.length);
+      const pct =
+        (ph.toLowerCase().match(/content-type:\s*([^\s;]+)/) || [])[1] ||
+        "text/plain";
+      const result = extractMimeText(ph, pb);
+      if (/^text\/plain/.test(pct) && !plain) plain = result;
+      else if (/^text\/html/.test(pct) && !html) html = result;
+      else if (/^multipart\//.test(pct) && !plain) plain = result;
+    }
+    return plain || html;
+  }
+
+  const decoded = decodeBodyContent(body, enc, charset);
+  return /^text\/html/i.test(ct) ? stripHtmlTags(decoded) : decoded;
+}
+
+function parseEml(content: string): string {
+  const sep = content.indexOf("\r\n\r\n") !== -1 ? "\r\n\r\n" : "\n\n";
+  const si = content.indexOf(sep);
+  if (si === -1) return content;
+
+  const headerSection = content.slice(0, si);
+  const body = content.slice(si + sep.length);
+  const headers = parseEmailHeaders(headerSection);
+  const bodyText = extractMimeText(headerSection, body);
+
+  const meta: string[] = [];
+  if (headers["from"]) meta.push(`De : ${decodeRfc2047(headers["from"])}`);
+  if (headers["to"]) meta.push(`À : ${decodeRfc2047(headers["to"])}`);
+  if (headers["subject"])
+    meta.push(`Objet : ${decodeRfc2047(headers["subject"])}`);
+  if (headers["date"]) meta.push(`Date : ${headers["date"]}`);
+
+  return [...meta, "", bodyText.trim()].join("\n");
+}
+
 // Toast notification component
 function Toast({
   message,
@@ -94,6 +236,7 @@ export default function Home() {
   const [saving, setSaving] = useState(false);
   const [savingInstructions, setSavingInstructions] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [isDraggingEml, setIsDraggingEml] = useState(false);
 
   // --- Toast ---
   const [toast, setToast] = useState<{
@@ -164,6 +307,37 @@ export default function Home() {
     } finally {
       setUploading(false);
     }
+  };
+
+  // --- Handle EML import ---
+  const handleEmlFile = async (file: File) => {
+    if (
+      !file.name.toLowerCase().endsWith(".eml") &&
+      file.type !== "message/rfc822"
+    ) {
+      notify("Seuls les fichiers .eml sont acceptés", "warning");
+      return;
+    }
+    try {
+      const text = await file.text();
+      setOrdreClientText(parseEml(text));
+      notify(`Email chargé : ${file.name}`, "success");
+    } catch {
+      notify("Erreur lors de la lecture du fichier .eml", "error");
+    }
+  };
+
+  const handleEmlUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleEmlFile(file);
+    e.target.value = "";
+  };
+
+  const handleEmlDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDraggingEml(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleEmlFile(file);
   };
 
   // --- Handle extraction ---
@@ -690,16 +864,73 @@ export default function Home() {
         <div className="flex w-1/2 flex-col bg-gray-100">
           {isOrdreClient ? (
             <>
-              <div className="flex items-center gap-3 border-b bg-white px-5 py-3">
+              <div className="flex items-center justify-between border-b bg-white px-5 py-3">
                 <span className="text-sm font-medium text-gray-700">
                   Texte de l&apos;ordre client
                 </span>
+                <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-dashed border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:border-red-400 hover:bg-red-50 hover:text-red-600">
+                  <svg
+                    className="h-3.5 w-3.5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                    />
+                  </svg>
+                  Importer un .eml
+                  <input
+                    type="file"
+                    accept=".eml,message/rfc822"
+                    onChange={handleEmlUpload}
+                    className="hidden"
+                  />
+                </label>
               </div>
-              <div className="flex-1 overflow-hidden p-4">
+              <div
+                className={`relative flex-1 overflow-hidden p-4 transition-colors ${isDraggingEml ? "bg-red-50" : ""}`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDraggingEml(true);
+                }}
+                onDragLeave={(e) => {
+                  if (
+                    !e.currentTarget.contains(e.relatedTarget as Node)
+                  )
+                    setIsDraggingEml(false);
+                }}
+                onDrop={handleEmlDrop}
+              >
+                {isDraggingEml && (
+                  <div className="pointer-events-none absolute inset-4 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-red-400 bg-red-50/80">
+                    <div className="flex flex-col items-center gap-2 text-red-600">
+                      <svg
+                        className="h-8 w-8"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={1.5}
+                          d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                        />
+                      </svg>
+                      <span className="text-sm font-medium">
+                        Déposer le fichier .eml ici
+                      </span>
+                    </div>
+                  </div>
+                )}
                 <textarea
                   value={ordreClientText}
                   onChange={(e) => setOrdreClientText(e.target.value)}
-                  placeholder="Collez ou saisissez le texte de l'ordre client ici..."
+                  placeholder="Collez, saisissez ou déposez un fichier .eml ici..."
                   className="h-full w-full resize-none rounded-lg border border-gray-300 bg-white p-4 text-sm text-gray-700 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
                 />
               </div>

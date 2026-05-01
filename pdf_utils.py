@@ -11,8 +11,10 @@ if no OCR path is available.
 import functools
 import io
 import logging
+import os
 import shutil
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -20,6 +22,15 @@ logger = logging.getLogger(__name__)
 MAX_TEXT_LENGTH = 100_000
 OCR_DPI = 150
 MIN_TEXT_LENGTH = 30
+# Cap parallel OCR jobs: each ocrmypdf worker / tesseract subprocess holds a
+# rasterized page in memory, so unbounded parallelism on big PDFs can
+# exhaust RAM. 8 is a safe ceiling for typical laptops/servers.
+MAX_OCR_JOBS = 8
+
+
+def _job_count(page_count: int) -> int:
+    """Pick a parallelism level: bounded by CPUs, page count, and MAX_OCR_JOBS."""
+    return max(1, min(os.cpu_count() or 2, page_count, MAX_OCR_JOBS))
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +160,7 @@ def _ocr_pages_with_ocrmypdf(
             rotate_pages=True,
             oversample=OCR_DPI,
             optimize=0,             # skip PDF optimization for speed
-            jobs=1,
+            jobs=_job_count(total_pages),
             progress_bar=False,
             output_type="pdf",
             # Docusign-signed PDFs would otherwise raise DigitalSignatureError;
@@ -208,7 +219,7 @@ def _ocr_pages_with_tesseract_direct(
     lang = _ocr_lang()
     result = [""] * total_pages
 
-    for page_num in page_numbers:
+    def _ocr_one(page_num: int) -> tuple[int, str]:
         try:
             images = convert_from_bytes(
                 file_bytes,
@@ -217,7 +228,7 @@ def _ocr_pages_with_tesseract_direct(
                 last_page=page_num,
             )
             if not images:
-                continue
+                return page_num, ""
 
             img = images[0]
             img = img.convert("L")
@@ -234,9 +245,20 @@ def _ocr_pages_with_tesseract_direct(
                 if len(text2) > len(text):
                     text = text2
 
-            result[page_num - 1] = text
+            return page_num, text
         except Exception as e:
             logger.warning("Direct tesseract failed for page %d: %s", page_num, e)
+            return page_num, ""
+
+    workers = _job_count(len(page_numbers))
+    if workers <= 1 or len(page_numbers) <= 1:
+        for page_num in page_numbers:
+            _, text = _ocr_one(page_num)
+            result[page_num - 1] = text
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            for page_num, text in ex.map(_ocr_one, page_numbers):
+                result[page_num - 1] = text
 
     return result
 

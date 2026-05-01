@@ -1,18 +1,18 @@
-"""PDF text extraction with per-page hybrid strategy.
+"""PDF text extraction — always-OCR pipeline.
 
-Phase 1: Extract text per page with PyMuPDF, assess quality per page.
-Phase 2: Batch OCR only the pages that need it via ocrmypdf (with deskew,
-         denoise, rotation correction, 150 DPI). Falls back to direct
-         tesseract + Pillow preprocessing if ocrmypdf fails.
+Embedded text layers (especially Docusign-produced ones) can be silently
+corrupt: identical-looking glyphs swapped, dates mistyped, etc. We don't
+trust them. Every PDF is re-OCR'd via ocrmypdf (preferred, with deskew /
+rotate / 150 DPI) and falls back to direct tesseract + Pillow if ocrmypdf
+errors out. The original embedded text layer is only used as a last resort
+if no OCR path is available.
 """
 
 import functools
 import io
 import logging
-import re
 import shutil
 import tempfile
-import unicodedata
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -20,56 +20,10 @@ logger = logging.getLogger(__name__)
 MAX_TEXT_LENGTH = 100_000
 OCR_DPI = 150
 MIN_TEXT_LENGTH = 30
-MIN_PRINTABLE_RATIO = 0.70
-MIN_WORD_COUNT = 5
-MAX_REPLACEMENT_CHAR_RATIO = 0.05
-
-# Regex for "real words" — 2+ alphabetic chars including French accents
-_WORD_RE = re.compile(r"[A-Za-zÀ-ÿ]{2,}")
 
 
 # ---------------------------------------------------------------------------
-# Text quality assessment
-# ---------------------------------------------------------------------------
-
-def _assess_text_quality(text: str) -> tuple[bool, str]:
-    """Check whether extracted text looks like real readable content.
-
-    Returns (is_good, reason). Conservative: better to OCR unnecessarily
-    than to send garbage to the LLM.
-    """
-    stripped = text.strip()
-
-    # 1. Length gate
-    if len(stripped) < MIN_TEXT_LENGTH:
-        return False, "too_short"
-
-    # 2. Replacement character ratio (encoding errors)
-    replacement_count = stripped.count("\ufffd")
-    if replacement_count / len(stripped) > MAX_REPLACEMENT_CHAR_RATIO:
-        return False, "encoding_errors"
-
-    # 3. Printable character ratio
-    printable = 0
-    for ch in stripped:
-        cat = unicodedata.category(ch)
-        # L=letter, N=number, P=punctuation, Z=separator, S=symbol
-        if cat[0] in ("L", "N", "P", "Z", "S"):
-            printable += 1
-    ratio = printable / len(stripped)
-    if ratio < MIN_PRINTABLE_RATIO:
-        return False, "garbage_chars"
-
-    # 4. Word-likeness: must contain actual words
-    words = _WORD_RE.findall(stripped)
-    if len(words) < MIN_WORD_COUNT:
-        return False, "no_real_words"
-
-    return True, "ok"
-
-
-# ---------------------------------------------------------------------------
-# PyMuPDF extraction (Phase 1)
+# PyMuPDF text extraction (used for page-count + last-resort fallback)
 # ---------------------------------------------------------------------------
 
 def _extract_text_pymupdf(file_bytes: bytes) -> tuple[list[str], int]:
@@ -81,6 +35,24 @@ def _extract_text_pymupdf(file_bytes: bytes) -> tuple[list[str], int]:
     page_count = len(doc)
     doc.close()
     return page_texts, page_count
+
+
+def _page_count_only(file_bytes: bytes) -> int:
+    """Get the page count without extracting text. Returns 0 on failure."""
+    try:
+        import fitz
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+        n = len(doc)
+        doc.close()
+        return n
+    except Exception:
+        pass
+    try:
+        import pdfplumber
+        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+            return len(pdf.pages)
+    except Exception:
+        return 0
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +135,6 @@ def _ocr_pages_with_ocrmypdf(
         out_path = Path(out.name)
 
     try:
-        # Check if unpaper is available for the clean option
         has_unpaper = shutil.which("unpaper") is not None
 
         exit_code = ocrmypdf.ocr(
@@ -174,13 +145,16 @@ def _ocr_pages_with_ocrmypdf(
             sidecar=sidecar_path,
             force_ocr=True,
             deskew=True,
-            clean=has_unpaper,      # requires unpaper
+            clean=has_unpaper,
             rotate_pages=True,
             oversample=OCR_DPI,
             optimize=0,             # skip PDF optimization for speed
             jobs=1,
             progress_bar=False,
             output_type="pdf",
+            # Docusign-signed PDFs would otherwise raise DigitalSignatureError;
+            # we never redistribute the produced PDF, only mine its text.
+            invalidate_digital_signatures=True,
         )
 
         if exit_code not in (
@@ -189,18 +163,14 @@ def _ocr_pages_with_ocrmypdf(
         ):
             raise RuntimeError(f"ocrmypdf returned exit code {exit_code}")
 
-        # Parse sidecar: ocrmypdf writes text for ALL pages, separated by \x0c
-        # Pages not in the OCR set will have empty or minimal text
         sidecar_text = sidecar_path.read_text(encoding="utf-8", errors="replace")
         sidecar_pages = sidecar_text.split("\x0c")
 
-        # Build result list: map sidecar output back to page numbers
         result = [""] * total_pages
         for i, page_num in enumerate(range(1, total_pages + 1)):
             if page_num in page_set and i < len(sidecar_pages):
                 result[page_num - 1] = sidecar_pages[i].strip()
 
-        # Optionally return the searchable PDF
         searchable_pdf = None
         if return_searchable_pdf and out_path.exists():
             searchable_pdf = out_path.read_bytes()
@@ -250,16 +220,15 @@ def _ocr_pages_with_tesseract_direct(
                 continue
 
             img = images[0]
-
-            # Preprocessing for dirty scans
-            img = img.convert("L")                     # grayscale
-            img = img.filter(ImageFilter.SHARPEN)       # sharpen
-            img = ImageOps.autocontrast(img, cutoff=1)  # improve contrast
+            img = img.convert("L")
+            img = img.filter(ImageFilter.SHARPEN)
+            img = ImageOps.autocontrast(img, cutoff=1)
 
             text = pytesseract.image_to_string(img, lang=lang).strip()
 
-            # If still poor, try aggressive binarization
-            if not _assess_text_quality(text)[0]:
+            # If the first pass returns very little, retry on a binarized
+            # image (helps on scans with weak contrast).
+            if len(text) < MIN_TEXT_LENGTH:
                 binary = img.point(lambda x: 0 if x < 128 else 255, "1")
                 text2 = pytesseract.image_to_string(binary, lang=lang).strip()
                 if len(text2) > len(text):
@@ -280,141 +249,104 @@ def extract_text_from_pdf(
     file_bytes: bytes,
     return_searchable_pdf: bool = False,
 ) -> dict:
-    """Extract text from PDF bytes with per-page hybrid strategy.
+    """Extract text from PDF bytes by OCR'ing every page.
 
-    Phase 1: PyMuPDF text extraction + quality assessment per page.
-    Phase 2: Batch OCR (ocrmypdf or tesseract fallback) for pages that
-             failed quality checks.
+    Pipeline:
+      1. Page count via PyMuPDF (or pdfplumber).
+      2. OCR all pages with ocrmypdf (preferred).
+      3. If ocrmypdf fails, OCR via direct tesseract + Pillow.
+      4. If both OCR paths fail, fall back to the embedded text layer
+         (PyMuPDF) — better than nothing, but flagged via page_errors.
 
     Args:
         file_bytes: Raw PDF file content.
-        return_searchable_pdf: If True and OCR was performed, include
+        return_searchable_pdf: If True and ocrmypdf succeeded, include
             'searchable_pdf' key with the OCR'd PDF bytes.
 
     Returns:
         dict with keys: text, page_count, truncated, used_ocr,
-        and optionally: ocr_pages, error, searchable_pdf.
+        and optionally: ocr_pages, error, page_errors, searchable_pdf.
     """
-    page_texts: list[str] = []
-    page_count = 0
+    page_count = _page_count_only(file_bytes)
 
-    # ---- Phase 1: PyMuPDF extraction ----
-    try:
-        page_texts, page_count = _extract_text_pymupdf(file_bytes)
-    except Exception as e:
-        logger.warning("PyMuPDF extraction failed: %s", e)
+    if page_count == 0:
+        return {
+            "text": "",
+            "page_count": 0,
+            "truncated": False,
+            "used_ocr": False,
+            "error": "Impossible d'ouvrir ce fichier PDF. Le fichier est peut-être corrompu.",
+        }
 
-    if not page_texts and page_count == 0:
-        # PyMuPDF completely failed — try to at least get page count
-        try:
-            import pdfplumber
-            with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-                page_count = len(pdf.pages)
-                page_texts = [""] * page_count
-        except Exception:
-            return {
-                "text": "",
-                "page_count": 0,
-                "truncated": False,
-                "used_ocr": False,
-                "error": "Impossible d'ouvrir ce fichier PDF. Le fichier est peut-être corrompu.",
-            }
-
-    # ---- Per-page quality assessment ----
-    good_pages: dict[int, str] = {}  # 0-indexed -> text
-    bad_page_nums: list[int] = []     # 1-indexed for OCR tools
-
-    for i, text in enumerate(page_texts):
-        is_good, reason = _assess_text_quality(text)
-        if is_good:
-            good_pages[i] = text
-        else:
-            bad_page_nums.append(i + 1)  # 1-indexed
-
-    # ---- Phase 2: OCR for bad pages ----
+    all_pages = list(range(1, page_count + 1))
+    has_tesseract = shutil.which("tesseract") is not None
+    page_texts: list[str] = [""] * page_count
     used_ocr = False
     ocr_pages: list[int] = []
-    page_errors: list[str] = []
     searchable_pdf: bytes | None = None
+    page_errors: list[str] = []
 
-    if bad_page_nums:
-        has_tesseract = shutil.which("tesseract") is not None
+    if has_tesseract:
+        # Primary: ocrmypdf
+        try:
+            page_texts, searchable_pdf = _ocr_pages_with_ocrmypdf(
+                file_bytes,
+                all_pages,
+                page_count,
+                return_searchable_pdf=return_searchable_pdf,
+            )
+            if any(t.strip() for t in page_texts):
+                used_ocr = True
+                ocr_pages = [i for i, t in enumerate(page_texts, 1) if t.strip()]
+        except Exception as e:
+            logger.warning("ocrmypdf failed, falling back to direct tesseract: %s", e)
+            page_errors.append(f"ocrmypdf indisponible : {e}")
 
-        if not has_tesseract:
-            if not good_pages:
-                # No text at all and no OCR available
-                msg = (
-                    f"[Ce PDF contient {page_count} page(s) sans texte exploitable. "
-                    f"L'OCR n'est pas disponible (tesseract non installé). "
-                    f"Installez : apt-get install tesseract-ocr tesseract-ocr-fra poppler-utils]"
-                )
-                return {
-                    "text": "",
-                    "page_count": page_count,
-                    "truncated": False,
-                    "used_ocr": False,
-                    "error": msg,
-                }
-            else:
-                page_errors.append(
-                    f"Pages {_compress_page_ranges(bad_page_nums)} : OCR indisponible (tesseract non installé)"
-                )
-        else:
-            # Try ocrmypdf first (superior preprocessing)
-            ocr_texts = None
+        # Fallback: direct tesseract
+        if not used_ocr:
             try:
-                ocr_texts, searchable_pdf = _ocr_pages_with_ocrmypdf(
-                    file_bytes,
-                    bad_page_nums,
-                    page_count,
-                    return_searchable_pdf=return_searchable_pdf,
+                page_texts = _ocr_pages_with_tesseract_direct(
+                    file_bytes, all_pages, page_count,
                 )
+                if any(t.strip() for t in page_texts):
+                    used_ocr = True
+                    ocr_pages = [i for i, t in enumerate(page_texts, 1) if t.strip()]
             except Exception as e:
-                logger.warning("ocrmypdf failed, falling back to direct tesseract: %s", e)
+                logger.warning("Direct tesseract also failed: %s", e)
+                page_errors.append(f"OCR tesseract échoué : {e}")
+    else:
+        page_errors.append(
+            "OCR indisponible (tesseract non installé). "
+            "Installez : apt-get install tesseract-ocr tesseract-ocr-fra poppler-utils"
+        )
 
-            # Fallback to direct tesseract if ocrmypdf failed
-            if ocr_texts is None:
-                try:
-                    ocr_texts = _ocr_pages_with_tesseract_direct(
-                        file_bytes, bad_page_nums, page_count,
-                    )
-                except Exception as e:
-                    logger.warning("Direct tesseract also failed: %s", e)
-                    page_errors.append(f"OCR échoué : {e}")
+    # Last-resort fallback: read the embedded text layer. Known to be
+    # unreliable for Docusign-signed PDFs, but better than empty output.
+    if not used_ocr:
+        try:
+            embedded, _ = _extract_text_pymupdf(file_bytes)
+            if any(t.strip() for t in embedded):
+                page_texts = embedded
+                page_errors.append(
+                    "OCR indisponible — couche de texte intégrée utilisée (peut être inexacte)."
+                )
+        except Exception as e:
+            logger.warning("PyMuPDF fallback also failed: %s", e)
 
-            # Merge OCR results into final page texts
-            if ocr_texts:
-                for page_num in bad_page_nums:
-                    idx = page_num - 1
-                    ocr_text = ocr_texts[idx]
-                    if ocr_text and _assess_text_quality(ocr_text)[0]:
-                        page_texts[idx] = ocr_text
-                        ocr_pages.append(page_num)
-                        used_ocr = True
-                    elif ocr_text:
-                        # OCR produced something but quality is poor — use it
-                        # anyway as it's better than nothing
-                        page_texts[idx] = ocr_text
-                        ocr_pages.append(page_num)
-                        used_ocr = True
-                        page_errors.append(
-                            f"Page {page_num} : OCR de qualité limitée"
-                        )
-
-    # ---- Build final text with page markers ----
-    text_parts = []
-    for i, page_text in enumerate(page_texts):
-        if page_text.strip():
-            text_parts.append(f"--- Page {i + 1} ---\n{page_text}")
-
+    # Stitch pages with markers
+    text_parts = [
+        f"--- Page {i + 1} ---\n{t}"
+        for i, t in enumerate(page_texts)
+        if t.strip()
+    ]
     text = "\n\n".join(text_parts)
+
     truncated = False
     if len(text) > MAX_TEXT_LENGTH:
         text = text[:MAX_TEXT_LENGTH] + "\n\n[... TRONQUÉ ...]"
         truncated = True
 
-    # Check if we got any usable text at all
-    if not text.strip() and page_count > 0:
+    if not text.strip():
         msg = f"[Aucun texte exploitable extrait de ce PDF ({page_count} pages)."
         if page_errors:
             msg += " " + " | ".join(page_errors)
@@ -428,7 +360,7 @@ def extract_text_from_pdf(
             "error": msg,
         }
 
-    result = {
+    result: dict = {
         "text": text,
         "page_count": page_count,
         "truncated": truncated,

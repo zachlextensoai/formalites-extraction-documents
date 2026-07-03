@@ -63,6 +63,7 @@ export async function runExtraction(params: {
   fields: Field[];
   instructions: string;
   raw_text?: string;
+  direct_pdf?: boolean;
 }): Promise<{ results: ExtractionResult[] }> {
   const res = await fetch(`${API_BASE}/api/extract`, {
     method: "POST",

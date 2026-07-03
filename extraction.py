@@ -1,3 +1,4 @@
+import base64
 import json
 from openai import OpenAI
 from models import FieldDefinition, ExtractionResult
@@ -47,8 +48,15 @@ def extract_fields(
     api_key: str,
     model: str,
     instructions: str = "",
+    pdf_bytes: bytes | None = None,
+    filename: str = "document.pdf",
 ) -> list[ExtractionResult]:
-    """Call the LLM via OpenRouter to extract field values from PDF text."""
+    """Call the LLM via OpenRouter to extract field values.
+
+    If pdf_bytes is provided, the raw PDF is sent as a file input (OpenRouter
+    routes it natively to multimodal models, or OCRs it via mistral-ocr
+    otherwise) and pdf_text is ignored.
+    """
     client = OpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=api_key,
@@ -56,11 +64,26 @@ def extract_fields(
 
     system_prompt = build_system_prompt(fields, instructions)
 
+    if pdf_bytes is not None:
+        file_data = base64.b64encode(pdf_bytes).decode("ascii")
+        user_content = [
+            {"type": "text", "text": "Voici le document PDF :"},
+            {
+                "type": "file",
+                "file": {
+                    "filename": filename,
+                    "file_data": f"data:application/pdf;base64,{file_data}",
+                },
+            },
+        ]
+    else:
+        user_content = f"Voici le texte du document :\n\n{pdf_text}"
+
     response = client.chat.completions.create(
         model=model,
         messages=[
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Voici le texte du document :\n\n{pdf_text}"},
+            {"role": "user", "content": user_content},
         ],
         temperature=0.1,
         max_tokens=4096,

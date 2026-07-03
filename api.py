@@ -79,6 +79,7 @@ class ExtractRequest(BaseModel):
     fields: list[FieldDefinition]
     instructions: str
     raw_text: str = ""
+    direct_pdf: bool = False
 
 
 class SaveFieldsRequest(BaseModel):
@@ -210,7 +211,10 @@ def extract(req: ExtractRequest):
     if not OPENROUTER_API_KEY:
         raise HTTPException(500, "OpenRouter API key not configured")
 
-    # Determine source text
+    # Determine source (raw text, direct PDF bytes, or locally OCR'd text)
+    text = ""
+    pdf_bytes = None
+    pdf_filename = "document.pdf"
     if req.raw_text:
         text = req.raw_text.strip()
         if not text:
@@ -219,11 +223,19 @@ def extract(req: ExtractRequest):
         pdf_data = pdf_store.get(req.upload_id)
         if not pdf_data:
             raise HTTPException(404, "Upload not found. Please re-upload the PDF.")
-        _ensure_text_extracted(pdf_data)
-        if not pdf_data["text"]:
-            error_detail = pdf_data.get("extraction_error") or "No text could be extracted from this PDF"
-            raise HTTPException(422, error_detail)
-        text = pdf_data["text"]
+        if req.direct_pdf:
+            # Send the PDF itself to the model, skipping local OCR.
+            # raw_bytes is replaced by searchable_pdf once OCR has run.
+            pdf_bytes = pdf_data.get("raw_bytes") or pdf_data.get("searchable_pdf")
+            if not pdf_bytes:
+                raise HTTPException(404, "PDF data not found. Please re-upload the PDF.")
+            pdf_filename = pdf_data.get("filename", "document.pdf")
+        else:
+            _ensure_text_extracted(pdf_data)
+            if not pdf_data["text"]:
+                error_detail = pdf_data.get("extraction_error") or "No text could be extracted from this PDF"
+                raise HTTPException(422, error_detail)
+            text = pdf_data["text"]
 
     model_id = None
     for label, mid in AVAILABLE_MODELS.items():
@@ -239,6 +251,8 @@ def extract(req: ExtractRequest):
         OPENROUTER_API_KEY,
         model_id,
         instructions=req.instructions,
+        pdf_bytes=pdf_bytes,
+        filename=pdf_filename,
     )
     return {"results": [r.model_dump() for r in results]}
 

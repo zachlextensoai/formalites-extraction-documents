@@ -214,6 +214,7 @@ export default function Home() {
   const [docTypeSlug, setDocTypeSlug] = useState<string>("");
   const [modelLabel, setModelLabel] = useState<string>("");
   const [modelId, setModelId] = useState<string>("");
+  const [directPdf, setDirectPdf] = useState(false);
 
   // --- Fields state ---
   const [fields, setFields] = useState<Field[]>([]);
@@ -365,7 +366,7 @@ export default function Home() {
       const res = await runExtraction({
         ...(isOrdreClient
           ? { raw_text: ordreClientText }
-          : { upload_id: uploadId }),
+          : { upload_id: uploadId, direct_pdf: directPdf }),
         doc_type: docTypeSlug,
         model: modelId,
         fields,
@@ -544,6 +545,19 @@ export default function Home() {
               </option>
             ))}
           </select>
+          {!isOrdreClient && (
+            <button
+              onClick={() => setDirectPdf(!directPdf)}
+              title="Envoyer le PDF brut au modèle via OpenRouter au lieu de l'OCR local"
+              className={`rounded-md border px-3 py-1.5 text-sm shadow-sm transition-colors focus:outline-none focus:ring-1 focus:ring-red-500 ${
+                directPdf
+                  ? "border-red-500 bg-red-50 font-medium text-red-700"
+                  : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+              }`}
+            >
+              PDF direct {directPdf ? "✓" : ""}
+            </button>
+          )}
         </div>
       </header>
 
